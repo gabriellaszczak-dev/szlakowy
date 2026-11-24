@@ -6,10 +6,20 @@ name: Zbuduj IPA (iOS, niepodpisane)
 
 on:
   workflow_dispatch: # przycisk „Run workflow” w zakładce Actions
+    inputs:
+      runner:
+        description: 'Maszyna (gdy jedna długo czeka w kolejce, wybierz inną)'
+        type: choice
+        default: macos-latest
+        options:
+          - macos-latest
+          - macos-15-intel
+          - macos-15
+          - macos-26
 
 jobs:
   build-ipa:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner || 'macos-latest' }}
     timeout-minutes: 90
 
     steps:
