@@ -1,0 +1,76 @@
+# Buduje niepodpisany plik .ipa aplikacji Szlakowy na Macu w chmurze GitHuba.
+# Gotowy plik pobierzesz z zakładki Actions → wybrany przebieg → Artifacts.
+# KSign (lub inny sideloader) podpisze go Twoim certyfikatem przy instalacji.
+
+name: Zbuduj IPA (iOS, niepodpisane)
+
+on:
+  workflow_dispatch: # przycisk „Run workflow” w zakładce Actions
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Pobierz kod
+        uses: actions/checkout@v4
+
+      - name: Wybierz najnowszy Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Używam: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Zainstaluj paczki
+        run: npm ci
+
+      - name: Wygeneruj projekt iOS (Expo prebuild)
+        run: npx expo prebuild --platform ios --clean --no-install
+        env:
+          CI: 1
+
+      - name: CocoaPods
+        run: cd ios && pod install
+
+      - name: Zbuduj aplikację (bez podpisu)
+        shell: bash # pipefail: błąd xcodebuild nie zginie w „| tail”
+        run: |
+          WS=$(ls -d ios/*.xcworkspace | head -1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          echo "Workspace: $WS, scheme: $SCHEME"
+          xcodebuild \
+            -workspace "$WS" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tail -n 200
+
+      - name: Spakuj do .ipa
+        run: |
+          APP=$(ls -d build/App.xcarchive/Products/Applications/*.app | head -1)
+          test -n "$APP" || (echo "Nie znaleziono .app w archiwum" && exit 1)
+          rm -rf build/Payload && mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          cd build && zip -qry Szlakowy.ipa Payload
+          ls -lh Szlakowy.ipa
+
+      - name: Udostępnij plik do pobrania
+        uses: actions/upload-artifact@v4
+        with:
+          name: Szlakowy-ipa
+          path: build/Szlakowy.ipa
+          retention-days: 14
