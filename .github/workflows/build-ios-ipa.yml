@@ -10,16 +10,16 @@ on:
       runner:
         description: 'Maszyna (gdy jedna długo czeka w kolejce, wybierz inną)'
         type: choice
-        default: macos-latest
+        default: macos-26
         options:
-          - macos-latest
-          - macos-15-intel
-          - macos-15
           - macos-26
+          - macos-latest
+          - macos-15
+          - macos-15-intel
 
 jobs:
   build-ipa:
-    runs-on: ${{ inputs.runner || 'macos-latest' }}
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 90
 
     steps:
@@ -28,10 +28,17 @@ jobs:
 
       - name: Wybierz najnowszy Xcode
         run: |
+          echo "Dostępne wersje Xcode:"; ls -d /Applications/Xcode*.app
           XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           echo "Używam: $XCODE"
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
+          # Expo SDK 58 wymaga Xcode 26.4 lub nowszego
+          VER=$(xcodebuild -version | head -1 | awk '{print $2}')
+          if [ "$(printf '%s\n' 26.4 "$VER" | sort -V | head -1)" != "26.4" ]; then
+            echo "::error::Na tej maszynie najnowszy Xcode to $VER, a Expo SDK 58 potrzebuje 26.4+. Uruchom ponownie z maszyną macos-26."
+            exit 1
+          fi
 
       - name: Node.js
         uses: actions/setup-node@v4
