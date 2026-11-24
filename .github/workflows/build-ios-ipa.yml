@@ -51,11 +51,13 @@ jobs:
         run: cd ios && pod install
 
       - name: Zbuduj aplikację (bez podpisu)
-        shell: bash # pipefail: błąd xcodebuild nie zginie w „| tail”
+        shell: bash
         run: |
           WS=$(ls -d ios/*.xcworkspace | head -1)
           SCHEME=$(basename "$WS" .xcworkspace)
           echo "Workspace: $WS, scheme: $SCHEME"
+          mkdir -p build
+          set +e
           xcodebuild \
             -workspace "$WS" \
             -scheme "$SCHEME" \
@@ -67,7 +69,30 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            | tail -n 200
+            > build/xcodebuild.log 2>&1
+          STATUS=$?
+          set -e
+          if [ $STATUS -ne 0 ]; then
+            echo "::group::Linie z błędami"
+            grep -nE "error:|fatal error|Error:|FAILED|failed with exit" build/xcodebuild.log | head -150
+            echo "::endgroup::"
+            echo "::group::Wyjście skryptu ExpoModulesJSI"
+            grep -n "Build ExpoModulesJSI xcframework" build/xcodebuild.log | head -3
+            LINE=$(grep -n "PhaseScriptExecution \[CP-User\]\\ Build\\ ExpoModulesJSI" build/xcodebuild.log | head -1 | cut -d: -f1)
+            if [ -n "$LINE" ]; then sed -n "${LINE},$((LINE+250))p" build/xcodebuild.log | cut -c1-500; fi
+            echo "::endgroup::"
+            tail -n 80 build/xcodebuild.log
+            exit $STATUS
+          fi
+          tail -n 20 build/xcodebuild.log
+
+      - name: Zapisz log budowania (przy błędzie)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build/xcodebuild.log
+          retention-days: 7
 
       - name: Spakuj do .ipa
         run: |
